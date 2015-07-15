@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from cStringIO import StringIO
 from IPython.display import clear_output, Image, display
 from google.protobuf import text_format
@@ -12,12 +14,14 @@ import sys
 
 import caffe
 
+# For printing some kind of version identifier from the command line
+# VERSION = '0.2'
 
 def parseargs():
     # Kindly provided by Bystroushaak's `argparse builder`
     # http://kitakitsune.org/argparse_builder/argparse_builder.html
-    parser = argparse.ArgumentParser(
-        'Generate a "deepdream" image from a JPEG input.')
+    parser = argparse.ArgumentParser(description = 'Generate a "deepdream" ' +
+                                     'image from a JPEG input.')
     parser.add_argument('--infile', '-i', required=True,
                         help='''The input image filename. Required. Passing in ''' +
                         '''the "hidden" parameter 'keys' instead of a filename ''' +
@@ -33,6 +37,8 @@ def parseargs():
                         help='Number of octaves. Default 4.')
     parser.add_argument('--oct-scale', '-s', default=1.4, type=float,
                         help='Octave scale. Default 1.4.')
+    # parser.add_argument('--version', '-v', action='version',
+    #                     version='%(prog)s, version {0}'.format(VERSION))
     return parser.parse_args()
 
 
