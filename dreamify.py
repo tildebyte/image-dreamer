@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-from cStringIO import StringIO
-from IPython.display import clear_output, Image, display
 from google.protobuf import text_format
 
 import numpy as np
@@ -9,7 +7,6 @@ import scipy.ndimage as nd
 import PIL.Image
 
 import argparse
-
 import sys
 
 import caffe
@@ -17,10 +14,11 @@ import caffe
 # For printing some kind of version identifier from the command line
 # VERSION = '0.2'
 
+
 def parseargs():
     # Kindly provided by Bystroushaak's `argparse builder`
     # http://kitakitsune.org/argparse_builder/argparse_builder.html
-    parser = argparse.ArgumentParser(description = 'Generate a "deepdream" ' +
+    parser = argparse.ArgumentParser(description='Generate a "deepdream" ' +
                                      'image from a JPEG input.')
     parser.add_argument('--infile', '-i', required=True,
                         help='''The input image filename. Required. Passing in ''' +
@@ -46,7 +44,6 @@ def savearray(a, filename, fmt='png'):
     a = np.uint8(np.clip(a, 0, 255))
     with open(filename, 'wb') as f:
         PIL.Image.fromarray(a).save(f, fmt)
-        # display(Image(data=f.getvalue()))
 
 
 # A couple of utility functions for converting to and from Caffe's input
@@ -59,7 +56,7 @@ def deprocess(net, img):
     return np.dstack((img + net.transformer.mean['data'])[::-1])
 
 
-def make_step(net, step_size=1.5, end='inception_4c/output', jitter=32, clip=True):
+def make_step(net, end, clip, step_size, jitter):
     '''Basic gradient ascent step.'''
     # Input image is stored in Net's 'data' blob.
     src = net.blobs['data']
@@ -84,12 +81,15 @@ def make_step(net, step_size=1.5, end='inception_4c/output', jitter=32, clip=Tru
         src.data[:] = np.clip(src.data, -bias, 255 - bias)
 
 
-def deepdream(net, base_img, iter_n=10, octave_n=4, octave_scale=1.4, end='inception_4c/output', clip=True, **step_params):
+def deepdream(net, img, iter_n, octave_n, octave_scale,
+              end, clip, **step_params):
     # Prepare base images for all octaves.
-    octaves = [preprocess(net, base_img)]
+    octaves = [preprocess(net, img)]
     for i in xrange(octave_n - 1):
         octaves.append(
-            nd.zoom(octaves[-1], (1, 1.0 / octave_scale, 1.0 / octave_scale), order=1))
+            nd.zoom(octaves[-1],
+                    (1, 1.0 / octave_scale, 1.0 / octave_scale),
+                    order=1))
     src = net.blobs['data']
 
     # Allocate image for network-produced details.
@@ -99,20 +99,20 @@ def deepdream(net, base_img, iter_n=10, octave_n=4, octave_scale=1.4, end='incep
         if octave > 0:
             # Upscale details from the previous octave.
             h1, w1 = detail.shape[-2:]
-            detail = nd.zoom(detail, (1, 1.0 * h / h1, 1.0 * w / w1), order=1)
+            detail = nd.zoom(detail,
+                             (1, 1.0 * h / h1, 1.0 * w / w1),
+                             order=1)
         src.reshape(1, 3, h, w)  # Resize the network's input image size.
         src.data[0] = octave_base + detail
         for i in xrange(iter_n):
-            make_step(net, end=end, clip=clip, **step_params)
+            make_step(net, end, clip, **step_params)
             # Visualization.
             vis = deprocess(net, src.data[0])
             # Adjust image contrast if clipping is disabled.
             if not clip:
                 vis = vis * (255.0 / np.percentile(vis, 99.98))
-            # showarray(vis)
-            print octave, i, end, vis.shape
-            clear_output(wait=True)
-
+            print("octave {:{width}}, iteration {:{width}}, output '{}', shape {}"
+                  .format(octave, i, end, vis.shape, width=3))
         # Extract details produced on the current octave.
         detail = src.data[0] - octave_base
     # Return the resulting image.
@@ -145,7 +145,8 @@ def main(args):
 
         img = np.float32(PIL.Image.open(args.infile))
         output = deepdream(net, img, end=args.end_name, iter_n=args.iter_n,
-                           octave_n=args.octaves, octave_scale=args.oct_scale)
+                           octave_n=args.octaves, octave_scale=args.oct_scale,
+                           clip=True, step_size=1.5, jitter=32)
         savearray(output, args.outfile)
         return 0
 
