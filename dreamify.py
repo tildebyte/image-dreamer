@@ -7,6 +7,7 @@ import scipy.ndimage as nd
 import PIL.Image
 
 import argparse
+import ConfigParser
 import sys
 
 import caffe
@@ -38,6 +39,22 @@ def parseargs():
     # parser.add_argument('--version', '-v', action='version',
     #                     version='%(prog)s, version {0}'.format(VERSION))
     return parser.parse_args()
+
+
+def configure():
+    cfg = ConfigParser.SafeConfigParser()
+    cfg.read('dreamify.cfg')
+    mean_list = [float(_) for _ in cfg.get('net', 'mean').split(',')]
+    channel_tuple = tuple(int(_)
+                          for _ in cfg.get('net', 'channel_swap').split(','))
+    config = dict(param_fn=cfg.get('model', 'param_fn'),
+                  net_fn=cfg.get('model', 'net_fn'),
+                  mean=mean_list,
+                  channel_swap=channel_tuple,
+                  clip=cfg.getboolean('step', 'clip'),
+                  step_size=cfg.getfloat('step', 'step_size'),
+                  jitter=cfg.getint('step', 'jitter'))
+    return config
 
 
 def savearray(a, filename, fmt='png'):
@@ -120,25 +137,18 @@ def deepdream(net, img, iter_n, octave_n, octave_scale,
 
 
 def main(args):
+    config = configure()
     try:
-        # Substitute site-specific info here.
-        model_path = '/home/vagrant/caffe/models/bvlc_googlenet/'
-        net_fn = model_path + 'deploy.prototxt'
-        param_fn = model_path + 'bvlc_googlenet.caffemodel'
-
         # Patching model to be able to compute gradients.
         # Note that you can also manually add "force_backward: true" line to
         # "deploy.prototxt".
         model = caffe.io.caffe_pb2.NetParameter()
-        text_format.Merge(open(net_fn).read(), model)
+        text_format.Merge(open(config['net_fn']).read(), model)
         model.force_backward = True
         open('tmp.prototxt', 'w').write(str(model))
-        net = caffe.Classifier('tmp.prototxt', param_fn,
-                               # ImageNet mean, training set dependent.
-                               mean=np.float32([104.0, 116.0, 122.0]),
-                               # The reference model has channels in BGR order instead
-                               # of RGB.
-                               channel_swap=(2, 1, 0))
+        net = caffe.Classifier('tmp.prototxt', config['param_fn'],
+                               mean=np.float32(config['mean']),
+                               channel_swap=config['channel_swap'])
         if 'keys' == args.infile:
             print('\n'.join(net.blobs.keys()))
             return 0
@@ -146,7 +156,8 @@ def main(args):
         img = np.float32(PIL.Image.open(args.infile))
         output = deepdream(net, img, end=args.end_name, iter_n=args.iter_n,
                            octave_n=args.octaves, octave_scale=args.oct_scale,
-                           clip=True, step_size=1.5, jitter=32)
+                           clip=config['clip'], step_size=config['step_size'],
+                           jitter=config['jitter'])
         savearray(output, args.outfile)
         return 0
 
