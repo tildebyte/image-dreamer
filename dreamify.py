@@ -49,12 +49,35 @@ def configure():
                           for _ in cfg.get('net', 'channel_swap').split(','))
     config = dict(param_fn=cfg.get('model', 'param_fn'),
                   net_fn=cfg.get('model', 'net_fn'),
-                  mean=mean_list,
+                  mean=np.float32(mean_list),
                   channel_swap=channel_tuple,
                   clip=cfg.getboolean('step', 'clip'),
                   step_size=cfg.getfloat('step', 'step_size'),
-                  jitter=cfg.getint('step', 'jitter'))
+                  jitter=cfg.getint('step', 'jitter'),
+                  tempfile=cfg.get('misc', 'tempfile'))
     return config
+
+
+def patch_model(net_fn, tempfile):
+    # Patching model to be able to compute gradients.
+    # Note that you can also manually add "force_backward: true" line to
+    # "deploy.prototxt".
+    model = caffe.io.caffe_pb2.NetParameter()
+    text_format.Merge(open(net_fn).read(), model)
+    model.force_backward = True
+    open(tempfile, 'w').write(str(model))
+
+
+def make_net(tempfile, param_fn, mean, channel_swap, ):
+    net = caffe.Classifier(tempfile, param_fn,
+                           mean=mean, channel_swap=channel_swap)
+    # Following is from https://github.com/Dhar/image-dreamer/issues/7
+    # net = caffe.Classifier(MODEL_FILE, PRETRAINED)
+    # net.set_raw_scale('data', 255)
+    # net.set_mean('data', np.load(caffe_root +
+    #                              'python/caffe/imagenet/ilsvrc_2012_mean.npy'))
+    # net.set_channel_swap('data', channel_swap)
+    return net
 
 
 def savearray(a, filename, fmt='png'):
@@ -91,8 +114,8 @@ def make_step(net, end, clip, step_size, jitter):
 
     # Apply normalized ascent step to the input image.
     src.data[:] += step_size / np.abs(g).mean() * g
-    src.data[0] = np.roll(
-        np.roll(src.data[0], -ox, -1), -oy, -2)  # Unshift image.
+    # Unshift image.
+    src.data[0] = np.roll(np.roll(src.data[0], -ox, -1), -oy, -2)
     if clip:
         bias = net.transformer.mean['data']
         src.data[:] = np.clip(src.data, -bias, 255 - bias)
@@ -139,20 +162,12 @@ def deepdream(net, img, iter_n, octave_n, octave_scale,
 def main(args):
     config = configure()
     try:
-        # Patching model to be able to compute gradients.
-        # Note that you can also manually add "force_backward: true" line to
-        # "deploy.prototxt".
-        model = caffe.io.caffe_pb2.NetParameter()
-        text_format.Merge(open(config['net_fn']).read(), model)
-        model.force_backward = True
-        open('tmp.prototxt', 'w').write(str(model))
-        net = caffe.Classifier('tmp.prototxt', config['param_fn'],
-                               mean=np.float32(config['mean']),
-                               channel_swap=config['channel_swap'])
+        patch_model(config['net_fn'], config['tempfile'])
+        net = make_net(config['tempfile'], config['param_fn'], config['mean'],
+                       config['channel_swap'])
         if 'keys' == args.infile:
             print('\n'.join(net.blobs.keys()))
             return 0
-
         img = np.float32(PIL.Image.open(args.infile))
         output = deepdream(net, img, end=args.end_name, iter_n=args.iter_n,
                            octave_n=args.octaves, octave_scale=args.oct_scale,
