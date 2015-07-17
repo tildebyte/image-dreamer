@@ -47,7 +47,8 @@ def configure():
     mean_list = [float(_) for _ in cfg.get('net', 'mean').split(',')]
     channel_tuple = tuple(int(_)
                           for _ in cfg.get('net', 'channel_swap').split(','))
-    config = dict(param_fn=cfg.get('model', 'param_fn'),
+    config = dict(model_path=cfg.get('model', 'model_path'),
+                  param_fn=cfg.get('model', 'param_fn'),
                   net_fn=cfg.get('model', 'net_fn'),
                   mean=np.float32(mean_list),
                   channel_swap=channel_tuple,
@@ -74,7 +75,7 @@ def make_net(tempfile, param_fn, mean, channel_swap, ):
     # Following is from https://github.com/Dhar/image-dreamer/issues/7
     # net = caffe.Classifier(MODEL_FILE, PRETRAINED)
     # net.set_raw_scale('data', 255)
-    # net.set_mean('data', np.load(caffe_root +
+    # net.set_mean('data', np.load(config[model_path] +
     #                              'python/caffe/imagenet/ilsvrc_2012_mean.npy'))
     # net.set_channel_swap('data', channel_swap)
     return net
